@@ -1,0 +1,1 @@
+-- Local tests create their own accounts and rows.
