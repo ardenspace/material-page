@@ -1,3 +1,2 @@
-export default function Home() {
-  return <main>소재함</main>;
-}
+import Board from "@/components/Board";
+export default function Home() { return <Board page="inbox" />; }
