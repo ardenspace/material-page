@@ -1,4 +1,4 @@
-const TITLE = '강원도 밈 업데이트!';
+const TITLE = '강원도 밈';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const INITIAL_DAYS = 3;
 const OVERLAP_DAYS = 3;
@@ -52,7 +52,7 @@ function forwardWindow(start, end, url, secret, runStarted) {
     for (const thread of threads) {
       for (const message of thread.getMessages()) {
         const receivedAt = message.getDate().getTime();
-        if (receivedAt < start || receivedAt >= end || message.getSubject().trim() !== TITLE) continue;
+        if (receivedAt < start || receivedAt >= end || !message.getSubject().trim().startsWith(TITLE)) continue;
         const id = message.getId();
         try {
           const response = UrlFetchApp.fetch(url, {
