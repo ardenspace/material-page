@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set search_path = public, extensions;
-select plan(31);
+select plan(38);
 
 insert into auth.users(id, email, role, raw_user_meta_data) values
 ('00000000-0000-0000-0000-000000000001', 'ardensdevspace@gmail.com', 'authenticated', '{"full_name":"관리자"}'),
@@ -71,6 +71,24 @@ select is((select count(*)::integer from public.ratings where material_id = '200
 select is((select count(*)::integer from public.seen_posts where post_id = '100'), 1, '영구 중복 기록 보존');
 update public.board_revision set retention_days = 45 where id = 1;
 select is(private.purge_expired(), 0, '보존 기간 조정 적용');
+
+set local role service_role;
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+select is((public.ingest_batch('post-info-mail', now(), '[{"kind":"parsed","position":0,"post_id":"200","url":"https://x.com/abc/status/200","category":"밈","post_text":"본문","author_name":"작성자","author_handle":"abc","image_url":"https://pbs.twimg.com/media/a.jpg","likes":12,"replies":3,"posted_at":"2026-09-27T01:23:45.000Z"}]'::jsonb, 0) ->> 'parsed')::integer, 1, '게시물 정보 카드 저장');
+select throws_ok($$select public.ingest_batch('bad-image-mail', now(), '[{"kind":"parsed","position":0,"post_id":"201","url":"https://x.com/abc/status/201","category":"밈","image_url":"https://evil.example/a.jpg"}]'::jsonb, 0)$$);
+select throws_ok($$select public.ingest_batch('bad-replies-mail', now(), '[{"kind":"parsed","position":0,"post_id":"202","url":"https://x.com/abc/status/202","category":"밈","replies":-1}]'::jsonb, 0)$$);
+select is(public.ingest_batch('no-link-mail', now(), '[]'::jsonb, 0) - 'batchId', '{"status":"created","parsed":0,"raw":0,"skipped":0}'::jsonb, '링크 없는 메일도 회차 생성');
+reset role;
+select set_config('request.jwt.claims', '{}', true);
+select is((select row(post_text, author_name, author_handle, image_url, likes, replies, posted_at, retweets, summary, reason, raw_text)::text
+  from public.materials where post_id = '200'),
+  row('본문', '작성자', 'abc', 'https://pbs.twimg.com/media/a.jpg', 12::bigint, 3::bigint, '2026-09-27T01:23:45Z'::timestamptz,
+    null::bigint, null::text, null::text, null::text)::text, '새 칸 저장, 예전 칸은 null');
+select is((select count(*)::integer from public.batches where gmail_message_id = 'no-link-mail'), 1, '링크 없는 메일의 회차 행');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000004","role":"authenticated","email":"stranger@example.com","app_metadata":{"provider":"google"}}', true);
+select is((select count(*)::integer from public.materials where post_id = '200'), 0, '미등록 계정은 새 카드를 읽지 못함');
+reset role;
 
 select * from finish();
 rollback;

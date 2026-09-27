@@ -3,7 +3,8 @@ import { Client } from "pg";
 import { describe, expect, it } from "vitest";
 
 const connectionString = process.env.TEST_DATABASE_URL ?? "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
-const card = (post_id: string, position = 0) => ({ kind: "parsed", post_id, position, url: `https://x.com/a/status/${post_id}`, category: "밈", likes: 1, retweets: 0, summary: "테스트", reason: "이유" });
+const card = (post_id: string, position = 0) => ({ kind: "parsed", post_id, position, url: `https://x.com/a/status/${post_id}`, category: "밈",
+  post_text: "테스트", author_name: "작성자", author_handle: "a", image_url: null, likes: 1, replies: 0, posted_at: new Date().toISOString() });
 const idNumber = () => `${Date.now()}${Math.floor(Math.random() * 1_000_000).toString().padStart(6, "0")}`;
 async function client() { const db = new Client({ connectionString }); await db.connect(); return db; }
 async function serviceCall(messageId: string, items: object[]) {
