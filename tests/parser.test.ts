@@ -1,50 +1,57 @@
 import { describe, expect, it } from "vitest";
 import { parseMail } from "../supabase/functions/_shared/parse";
 
-const header = "===강원소재===\n";
-const footer = "\n===끝===";
-const item = (link = "https://x.com/gangwon/status/123") => `[1]\n링크: ${link}\n분류: 밈\n좋아요: 1,234\n리트윗: 2 3\n요약: 강원도 이야기\n재밌는 이유: 공감`;
-
 describe("Grok 메일 해석", () => {
-  it("정상 항목과 링크, 반응 수를 정규화한다", () => {
-    const result = parseMail(header + item() + footer);
-    expect(result.cards[0]).toMatchObject({ kind: "parsed", post_id: "123", url: "https://x.com/gangwon/status/123", category: "밈", likes: 1234, retweets: 23, summary: "강원도 이야기" });
+  it("한 줄에 하나씩 분류와 링크를 읽는다", () => {
+    const result = parseMail("밈 https://x.com/gangwon/status/123\n화제 https://x.com/b/status/456\n");
+    expect(result).toEqual({ skipped: 0, cards: [
+      { kind: "parsed", position: 0, post_id: "123", url: "https://x.com/gangwon/status/123", category: "밈" },
+      { kind: "parsed", position: 1, post_id: "456", url: "https://x.com/b/status/456", category: "화제" },
+    ] });
   });
-  it("여러 블록을 순서대로 읽고 블록 밖 텍스트를 무시한다", () => {
-    const result = parseMail(`소개\n${header}${item()}${footer}\n안내\n${header}${item("https://x.com/other/status/456")}${footer}`);
-    expect(result.cards.map(card => card.position)).toEqual([0, 1]);
-    expect(result.cards).toHaveLength(2);
+  it.each(["https://twitter.com/a/status/1?x=2", "https://mobile.x.com/a/status/1/photo/1", "http://www.twitter.com/a/status/1/#photo", "https://x.com/a/status/1/"])("링크 변형 %s", link => {
+    expect(parseMail(`반응 ${link}`).cards[0]).toMatchObject({ post_id: "1", url: "https://x.com/a/status/1", category: "반응" });
   });
-  it("여러 줄 요약과 전각 콜론을 읽는다", () => {
-    const result = parseMail(`${header}[1]\n링크： https://x.com/a/status/1\n요약： 첫 줄\n둘째 줄\n재밌는 이유： 이유${footer}`);
-    expect(result.cards[0]).toMatchObject({ kind: "parsed", summary: "첫 줄\n둘째 줄", reason: "이유" });
+  it("잘못된 주소는 링크로 보지 않는다", () => {
+    expect(parseMail("밈 https://evil.example/a/status/1\n밈 https://x.com/a/photo/1\n밈 https://x.com/abcdefghijklmnop/status/1").cards).toEqual([]);
   });
-  it.each(["https://twitter.com/a/status/1?x=2", "https://mobile.x.com/a/status/1/photo/1", "http://www.twitter.com/a/status/1/#photo"])("링크 변형 %s", link => {
-    expect(parseMail(header + item(link) + footer).cards[0]).toMatchObject({ kind: "parsed", post_id: "1", url: "https://x.com/a/status/1" });
+  it("번호 전체를 취한다", () => {
+    expect(parseMail("밈 https://x.com/a/status/1971234567890123456").cards[0].post_id).toBe("1971234567890123456");
   });
-  it("링크가 없거나 잘못되면 항목 원문을 남긴다", () => {
-    expect(parseMail(`${header}[1]\n요약: 링크 없음${footer}`).cards[0]).toMatchObject({ kind: "raw", raw_text: "[1]\n요약: 링크 없음" });
-    expect(parseMail(header + item("https://evil.example/a/status/1") + footer).cards[0].kind).toBe("raw");
+  it("한 줄의 여러 링크를 모두 찾고 분류는 앞 링크 뒤부터 읽는다", () => {
+    const result = parseMail("밈 https://x.com/a/status/1?s=20 화제 https://x.com/b/status/2https://x.com/c/status/3");
+    expect(result.cards.map(card => [card.post_id, card.category])).toEqual([["1", "밈"], ["2", "화제"], ["3", "기타"]]);
   });
-  it("분류와 숫자가 잘못되어도 카드를 만든다", () => {
-    expect(parseMail(`${header}[1]\n링크: https://x.com/a/status/1\n분류: 불명\n좋아요: 많음\n리트윗: 9999999999999999999999${footer}`).cards[0])
-      .toMatchObject({ kind: "parsed", category: "기타", likes: null, retweets: null, summary: "", reason: "" });
+  it.each([
+    ["1. 밈", "밈"], ["1) 화제", "화제"], ["(2) 반응", "반응"], ["[3] 밈", "밈"], ["- 웃긴:", "웃긴 게시물"], ["* 밈", "밈"],
+    ["• 반응：", "반응"], ["· 화제", "화제"], ["웃긴 게시물", "웃긴 게시물"], ["  밈  ", "밈"],
+    ["재밌는 밈", "기타"], ["링크:", "기타"], ["", "기타"], ["밈밈", "기타"],
+  ])("분류 %j → %s", (prefix, category) => {
+    expect(parseMail(`${prefix} https://x.com/a/status/1`).cards[0].category).toBe(category);
   });
-  it("시작 표시가 없으면 본문 전체를 원문 카드로 남긴다", () => {
-    expect(parseMail("제목\n내용").cards).toEqual([{ kind: "raw", position: 0, raw_text: "제목\n내용" }]);
+  it("잘린 메일은 문구 앞의 마지막 링크를 버리고 문구 뒤는 읽지 않는다", () => {
+    const result = parseMail("밈 https://x.com/a/status/1\n화제 https://x.com/b/status/2\n반응 https://x.com/c/status/34… Continue reading\n밈 https://x.com/d/status/4");
+    expect(result.cards.map(card => card.post_id)).toEqual(["1", "2"]);
+    expect(result.skipped).toBe(0);
   });
-  it("끝 표시가 없거나 항목이 없는 블록도 보존한다", () => {
-    expect(parseMail(header + item()).cards[0].kind).toBe("parsed");
-    expect(parseMail(`${header}텍스트${footer}`).cards[0]).toMatchObject({ kind: "raw" });
+  it("번호가 온전해 보여도 잘린 메일의 마지막 링크를 버린다", () => {
+    expect(parseMail("밈 https://x.com/a/status/1\n화제 https://x.com/b/status/2\nCONTINUE READING").cards.map(card => card.post_id)).toEqual(["1"]);
   });
-  it("한 메일의 중복 게시물은 앞 항목만 남긴다", () => {
-    const result = parseMail(`${header}${item()}\n${item("https://twitter.com/b/status/123")}${footer}`);
-    expect(result.cards).toHaveLength(1);
+  it("링크가 하나뿐인 잘린 메일은 빈 결과다", () => {
+    expect(parseMail("밈 https://x.com/a/status/123\ncontinue reading")).toEqual({ cards: [], skipped: 0 });
+  });
+  it("같은 게시물은 앞의 것만 남기고 뒤의 것은 건너뛴 수로 센다", () => {
+    const result = parseMail("밈 https://twitter.com/a/status/123\n화제 https://x.com/b/status/5\n반응 https://x.com/a/status/123");
+    expect(result.cards.map(card => [card.post_id, card.position])).toEqual([["123", 0], ["5", 1]]);
     expect(result.skipped).toBe(1);
   });
-  it("서로 다른 원문 카드는 중복 제거하지 않는다", () => {
-    const result = parseMail(`${header}[1]\n없음\n[2]\n없음${footer}`);
-    expect(result.cards).toHaveLength(2);
-    expect(result.cards.every(card => card.kind === "raw")).toBe(true);
+  it("링크가 없는 메일은 카드를 만들지 않는다", () => {
+    expect(parseMail("제목\r\n오늘은 소재가 없어요")).toEqual({ cards: [], skipped: 0 });
+  });
+  it("요청문의 예시 줄은 링크로 인식하지 않는다", () => {
+    expect(parseMail("예) 밈 https://x.com/아이디/status/게시물번호").cards).toEqual([]);
+  });
+  it("줄바꿈 형식을 통일한다", () => {
+    expect(parseMail("밈 https://x.com/a/status/1\r화제 https://x.com/b/status/2\r\n").cards.map(card => card.category)).toEqual(["밈", "화제"]);
   });
 });

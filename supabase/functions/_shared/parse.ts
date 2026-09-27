@@ -1,86 +1,50 @@
-export type ParsedCard = {
-  kind: "parsed";
-  position: number;
-  post_id: string;
-  url: string;
-  category: "밈" | "웃긴 게시물" | "화제" | "반응" | "기타";
-  likes: number | null;
-  retweets: number | null;
-  summary: string;
-  reason: string;
-};
-export type RawCard = { kind: "raw"; position: number; raw_text: string };
-export type Card = ParsedCard | RawCard;
+export type Category = "밈" | "웃긴 게시물" | "화제" | "반응" | "기타";
+export type ParsedCard = { kind: "parsed"; position: number; post_id: string; url: string; category: Category };
 
-const fields: Record<string, keyof Pick<ParsedCard, "summary" | "reason"> | "link" | "category" | "likes" | "retweets"> = {
-  "링크": "link", "분류": "category", "좋아요": "likes", "리트윗": "retweets",
-  "요약": "summary", "재밌는 이유": "reason",
-};
+const linkPattern = /https?:\/\/(?:(?:www|mobile)\.)?(?:x|twitter)\.com\/([A-Za-z0-9_]{1,15})\/status\/(\d+)/gi;
+const categories: Record<string, Category> = { "밈": "밈", "웃긴": "웃긴 게시물", "웃긴 게시물": "웃긴 게시물", "화제": "화제", "반응": "반응" };
 
-function parseLink(value: string): { post_id: string; url: string } | null {
-  try {
-    const link = new URL(value.trim());
-    if (link.protocol !== "https:" && link.protocol !== "http:") return null;
-    if (!/^(?:(?:www|mobile)\.)?(?:x|twitter)\.com$/i.test(link.hostname)) return null;
-    const pieces = link.pathname.split("/").filter(Boolean);
-    if (pieces.length < 3 || !/^[A-Za-z0-9_]{1,15}$/.test(pieces[0]) || pieces[1] !== "status" || !/^\d+$/.test(pieces[2])) return null;
-    return { post_id: pieces[2], url: `https://x.com/${pieces[0]}/status/${pieces[2]}` };
-  } catch { return null; }
+function categoryOf(prefix: string): Category {
+  const label = prefix.trim()
+    .replace(/^(?:\d+[.)]|\(\d+\)|\[\d+\])\s*/, "")
+    .replace(/^[-*•·]\s*/, "")
+    .replace(/[:：]$/, "")
+    .trim();
+  return categories[label] ?? "기타";
 }
 
-function count(value: string | undefined): number | null {
-  if (value === undefined) return null;
-  const digits = value.replace(/[,\s]/g, "");
-  if (!/^\d+$/.test(digits)) return null;
-  const num = Number(digits);
-  return Number.isSafeInteger(num) ? num : null;
+type Found = { post_id: string; url: string; category: Category };
+
+function findLinks(text: string): Found[] {
+  const found: Found[] = [];
+  for (const line of text.split("\n")) {
+    let from = 0;
+    for (const match of line.matchAll(linkPattern)) {
+      const start = match.index ?? 0;
+      found.push({ post_id: match[2], url: `https://x.com/${match[1]}/status/${match[2]}`, category: categoryOf(line.slice(from, start)) });
+      // A link runs until whitespace (query, fragment, /photo/1), but never into the next link.
+      const end = start + match[0].length;
+      const space = line.slice(end).search(/\s/);
+      from = space < 0 ? line.length : end + space;
+    }
+  }
+  return found;
 }
 
-export function parseMail(body: string): { cards: Card[]; skipped: number } {
-  const lines = body.replace(/\r\n?/g, "\n").split("\n");
-  const cards: Card[] = [];
+export function parseMail(body: string): { cards: ParsedCard[]; skipped: number } {
+  let text = body.replace(/\r\n?/g, "\n");
+  const cut = text.search(/continue reading/i);
+  if (cut >= 0) text = text.slice(0, cut);
+  const links = findLinks(text);
+  // A truncated mail may cut the last link mid-number, so it is always dropped.
+  if (cut >= 0) links.pop();
+  const cards: ParsedCard[] = [];
   const seen = new Set<string>();
   let skipped = 0;
-  let position = 0;
-  const pushRaw = (raw_text: string) => cards.push({ kind: "raw", position: position++, raw_text });
-  const pushItem = (itemLines: string[]) => {
-    const values: Record<string, string> = {};
-    let active: string | null = null;
-    for (const line of itemLines.slice(1)) {
-      const match = line.trim().match(/^(링크|분류|좋아요|리트윗|요약|재밌는 이유)\s*[:：]\s*(.*)$/);
-      if (match) {
-        active = fields[match[1]];
-        values[active] = match[2];
-      } else if (active) {
-        values[active] = `${values[active]}\n${line}`;
-      }
-    }
-    for (const key of Object.keys(values)) values[key] = values[key].trim();
-    const link = values.link ? parseLink(values.link) : null;
-    if (!link) { pushRaw(itemLines.join("\n")); return; }
-    if (seen.has(link.post_id)) { skipped++; return; }
+  for (const link of links) {
+    if (seen.has(link.post_id)) { skipped++; continue; }
     seen.add(link.post_id);
-    const category = ["밈", "웃긴 게시물", "화제", "반응"].includes(values.category) ? values.category as ParsedCard["category"] : "기타";
-    cards.push({ kind: "parsed", position: position++, ...link, category,
-      likes: count(values.likes), retweets: count(values.retweets), summary: values.summary ?? "", reason: values.reason ?? "" });
-  };
-  const starts = lines.some(line => line.trim() === "===강원소재===");
-  if (!starts) { pushRaw(body); return { cards, skipped }; }
-  let index = 0;
-  while (index < lines.length) {
-    if (lines[index].trim() !== "===강원소재===") { index++; continue; }
-    const blockStart = index++;
-    const itemGroups: string[][] = [];
-    let current: string[] | null = null;
-    while (index < lines.length && lines[index].trim() !== "===끝===" && lines[index].trim() !== "===강원소재===") {
-      const line = lines[index++];
-      if (/^\s*\[\d+\]/.test(line)) {
-        current = [line]; itemGroups.push(current);
-      } else if (current) current.push(line);
-    }
-    if (itemGroups.length === 0) pushRaw(lines.slice(blockStart, index < lines.length && lines[index].trim() === "===끝===" ? index + 1 : index).join("\n"));
-    else for (const group of itemGroups) pushItem(group);
-    if (lines[index]?.trim() === "===끝===") index++;
+    cards.push({ kind: "parsed", position: cards.length, ...link });
   }
   return { cards, skipped };
 }

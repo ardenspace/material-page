@@ -1,7 +1,9 @@
-import { parseMail } from "../_shared/parse.ts";
+import { parseMail, type ParsedCard } from "../_shared/parse.ts";
+import { linkOnly, type StoredItem } from "../_shared/post.ts";
 
 export type IngestResult = { status: "created" | "duplicate"; batchId: string; parsed: number; raw: number; skipped: number };
-type Save = (messageId: string, receivedAt: string, cards: ReturnType<typeof parseMail>["cards"], skipped: number) => Promise<IngestResult>;
+type Save = (messageId: string, receivedAt: string, items: StoredItem[], skipped: number) => Promise<IngestResult>;
+type Lookup = (cards: ParsedCard[]) => Promise<StoredItem[]>;
 
 async function validSecret(actual: string, expected: string): Promise<boolean> {
   const encoder = new TextEncoder();
@@ -16,7 +18,7 @@ function json(value: unknown, status: number): Response {
   return Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
 }
 
-export async function handleIngest(request: Request, secret: string, save: Save): Promise<Response> {
+export async function handleIngest(request: Request, secret: string, save: Save, lookup: Lookup): Promise<Response> {
   const auth = request.headers.get("Authorization") ?? "";
   const provided = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!(await validSecret(provided, secret))) return json({ error: "Unauthorized" }, 401);
@@ -29,8 +31,11 @@ export async function handleIngest(request: Request, secret: string, save: Save)
     return json({ error: "Invalid body" }, 400);
   }
   const parsed = parseMail(body);
+  // A failed lookup must never fail the mail: fall back to link-only cards.
+  let items: StoredItem[];
+  try { items = await lookup(parsed.cards); } catch { items = linkOnly(parsed.cards); }
   try {
-    return json(await save(messageId, receivedAt, parsed.cards, parsed.skipped), 200);
+    return json(await save(messageId, receivedAt, items, parsed.skipped), 200);
   } catch {
     return json({ error: "Ingest failed" }, 500);
   }
