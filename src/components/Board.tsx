@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Feedback from "@/components/Feedback";
+import MaterialImage from "@/components/MaterialImage";
 import Icon, { BrandMark } from "@/components/Icon";
 import { batchTitle, kst, type Allow, type Batch, type Comment, type Material, type Profile, type Rating, type Status } from "@/lib/model";
 import { supabase } from "@/lib/supabase";
@@ -47,6 +48,7 @@ export default function Board({ page }: { page: Page }) {
   const [mode, setMode] = useState<"loading" | "login" | "denied" | "ready" | "error">("loading");
   const [admin, setAdmin] = useState(false);
   const [data, setData] = useState<BoardData>(empty);
+  const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("전체");
   const [sort, setSort] = useState<"saved" | "rating">("saved");
@@ -93,10 +95,14 @@ export default function Board({ page }: { page: Page }) {
           allRows<Rating>("ratings"), allRows<Profile>("profiles"), page === "team" ? allRows<Allow>("allowlist") : Promise.resolve([]),
           clientRevision(),
         ]);
-        if (token === generation.current) setData({ materials, batches, comments, ratings, profiles, allowlist, retentionDays: revision });
+        if (token === generation.current) {
+          setData({ materials, batches, comments, ratings, profiles, allowlist, retentionDays: revision });
+          setLoaded(true);
+        }
       } while (queued.current);
     } catch {
       setNotice("데이터를 불러오지 못했어요. 연결을 확인해 주세요.");
+      setMode(current => current === "loading" ? "error" : current);
     } finally { busy.current = false; }
   }, [check, page]);
 
@@ -167,7 +173,8 @@ export default function Board({ page }: { page: Page }) {
     else { setNewEmail(""); void reload(); }
   };
 
-  if (mode !== "ready") return <main className="auth-layout">
+  const loading = mode === "loading" || (mode === "ready" && !loaded && !notice);
+  if (mode !== "ready" && mode !== "loading") return <main className="auth-layout">
     <section className="auth-story">
       <Link className="brand" href="/"><BrandMark />소재함<span className="brand-dot">.</span></Link>
       <div className="auth-story-copy"><p className="eyebrow">A PLACE FOR YOUR NEXT IDEA</p><h2>좋은 이야기는<br />작은 발견에서.</h2><p>강원도의 새로운 이야기, 재미있는 순간들.<br />함께 모으고, 나누고, 다음 콘텐츠로 만들어가요.</p>
@@ -175,7 +182,7 @@ export default function Board({ page }: { page: Page }) {
       </div><span className="auth-caption">GANGWON · CONTENTS WORKSPACE</span>
     </section>
     <section className="auth-panel"><div className="auth-card"><BrandMark />
-      {mode === "loading" ? <><h1>반가워요.</h1><p role="status"><span className="loading-dot" />소재함을 여는 중이에요.</p></> : mode === "login" ? <><p className="eyebrow">WELCOME TO 소재함</p><h1>다음 이야기를<br />함께 시작해요.</h1><p>팀 계정으로 로그인하고<br />새로운 콘텐츠 소재를 만나보세요.</p><button className="google-login" onClick={login}><span className="google-symbol" aria-hidden="true">G</span>Google로 계속하기<span aria-hidden="true">→</span></button><small>초대받은 팀원만 이용할 수 있는 공간이에요.</small></> : mode === "denied" ? <><h1>초대가 필요해요.</h1><p>이 계정은 소재함에 등록되어 있지 않아요.<br />팀 관리자에게 초대를 요청해 주세요.</p><button onClick={logout}>다른 계정으로 로그인</button></> : <><h1>잠시 연결이 끊겼어요.</h1><p>연결 상태를 확인한 뒤 다시 시도해 주세요.</p><button className="primary" onClick={() => void reload()}>다시 시도</button></>}
+      {mode === "login" ? <><p className="eyebrow">WELCOME TO 소재함</p><h1>다음 이야기를<br />함께 시작해요.</h1><p>팀 계정으로 로그인하고<br />새로운 콘텐츠 소재를 만나보세요.</p><button className="google-login" onClick={login}><span className="google-symbol" aria-hidden="true">G</span>Google로 계속하기<span aria-hidden="true">→</span></button><small>초대받은 팀원만 이용할 수 있는 공간이에요.</small></> : mode === "denied" ? <><h1>초대가 필요해요.</h1><p>이 계정은 소재함에 등록되어 있지 않아요.<br />팀 관리자에게 초대를 요청해 주세요.</p><button onClick={logout}>다른 계정으로 로그인</button></> : <><h1>잠시 연결이 끊겼어요.</h1><p>연결 상태를 확인한 뒤 다시 시도해 주세요.</p><button className="primary" onClick={() => void reload()}>다시 시도</button></>}
       {notice && <p className="auth-notice" role="alert">{notice}</p>}
     </div><span className="auth-panel-footer">작은 아이디어가 모여, 더 좋은 콘텐츠로.</span></section>
   </main>;
@@ -200,15 +207,16 @@ export default function Board({ page }: { page: Page }) {
       <div className="card-top"><span className="tag" data-category={material.category}>{material.category}</span></div>
       {byline && <p className="byline">{byline}</p>}
       {material.post_text && <p className="post-text">{material.post_text}</p>}
-      {/* eslint-disable-next-line @next/next/no-img-element -- static export serves X image URLs as-is */}
-      {material.image_url && <img className="post-image" src={material.image_url} alt="게시물 첫 사진" loading="lazy" onError={event => { event.currentTarget.style.display = "none"; }}/>}
       {metrics && <p className="metrics">{metrics}</p>}
       {origin}
     </>;
   };
   // Legacy parser always filled summary (even ""), so null summary marks a card from the link-only format.
   const card = (material: Material) => <article key={material.id} className="card">
-    {material.kind === "raw" || material.summary !== null ? legacyBody(material) : postBody(material)}
+    <div className="card-body" tabIndex={0} role="region" aria-label="소재 본문">
+      {material.kind === "raw" || material.summary !== null ? legacyBody(material) : postBody(material)}
+    </div>
+    <MaterialImage key={material.image_url ?? "no-image"} src={material.image_url} />
     {page === "trashed" && <p className="trash-info">{material.prev_status === "saved" ? "저장됨에서 삭제됨" : "소재 모음에서 삭제됨"} · 자동 삭제까지 {Math.max(0, Math.ceil((new Date(material.trashed_at!).getTime() + data.retentionDays * 86400000 - now) / 86400000))}일</p>}
     <div className="card-actions">{page === "inbox" && <button className="primary" onClick={() => void change(material, "save")}><Icon name="saved" />소재 저장</button>}
       {page === "saved" && <button onClick={() => void change(material, "unsave")}><Icon name="saved" />저장 취소</button>}
@@ -221,14 +229,14 @@ export default function Board({ page }: { page: Page }) {
       <Link className="brand" href="/"><BrandMark />소재함<span className="brand-dot">.</span></Link>
       <div className="workspace-label"><span className="workspace-dot" />강원 콘텐츠 워크스페이스</div>
       <p className="nav-label">WORKSPACE</p>
-      <nav aria-label="페이지 이동">{(["inbox", "saved", "trashed", ...(admin ? ["team"] : [])] as Page[]).map(item => <Link key={item} href={paths[item]} aria-current={page === item ? "page" : undefined}><Icon name={item} />{labels[item]}{page === item && item !== "team" && <span className="nav-count">{data.materials.length}</span>}</Link>)}</nav>
+      <nav aria-label="페이지 이동">{(["inbox", "saved", "trashed", ...(admin ? ["team"] : [])] as Page[]).map(item => <Link key={item} href={paths[item]} aria-current={page === item ? "page" : undefined}><Icon name={item} />{labels[item]}{!loading && page === item && item !== "team" && <span className="nav-count">{data.materials.length}</span>}</Link>)}</nav>
       <div className="sidebar-note"><span aria-hidden="true">✳</span><strong>작은 발견, 좋은 콘텐츠.</strong><p>눈길이 가는 소재를 저장하고<br />팀의 생각을 더해보세요.</p></div>
       <div className="account"><span className="avatar">{(profiles.get(userId ?? "")?.display_name || email || "팀").slice(0, 1).toUpperCase()}</span><div><strong>{profiles.get(userId ?? "")?.display_name || "팀 워크스페이스"}</strong><span title={email}>{email}</span></div><button className="icon-button" onClick={logout} aria-label="로그아웃" title="로그아웃"><Icon name="logout" /></button></div>
     </div></header>
     <div className="main-area"><div className="topbar"><span>워크스페이스 <span className="breadcrumb-divider">/</span> <strong>{labels[page]}</strong></span><span className="topbar-caption">함께 발견하는 새로운 이야기</span></div>
-    <main className="content" id="main-content"><div className="page-head"><div><p className="eyebrow">{page === "inbox" ? "COLLECT & CREATE" : page === "saved" ? "YOUR COLLECTION" : page === "team" ? "BETTER TOGETHER" : "ROOM FOR NEW IDEAS"}</p><h1>{labels[page]}<span className="title-dot">.</span></h1><p className="page-description">{descriptions[page]}</p></div><div className="page-total"><strong>{page === "team" ? data.allowlist.length : data.materials.length}</strong><span>{page === "team" ? "함께하는 팀원" : page === "trashed" ? "삭제한 소재" : "모아둔 소재"}</span></div></div>
+    <main className="content" id="main-content" aria-busy={loading}><div className="page-head"><div><p className="eyebrow">{page === "inbox" ? "COLLECT & CREATE" : page === "saved" ? "YOUR COLLECTION" : page === "team" ? "BETTER TOGETHER" : "ROOM FOR NEW IDEAS"}</p><h1>{labels[page]}<span className="title-dot">.</span></h1><p className="page-description">{descriptions[page]}</p></div><div className="page-total"><strong>{loading ? "—" : page === "team" ? data.allowlist.length : data.materials.length}</strong><span>{page === "team" ? "함께하는 팀원" : page === "trashed" ? "삭제한 소재" : "모아둔 소재"}</span></div></div>
       {notice && <div role="alert" className="notice">{notice}<button className="icon-button" aria-label="알림 닫기" onClick={() => setNotice("")}><Icon name="close" /></button></div>}
-      {page === "team" ? <div className="team-layout"><form className="team-form" onSubmit={event => { event.preventDefault(); void manage("add", newEmail); }}><span className="section-icon"><Icon name="team" /></span><h2>함께할 팀원 초대</h2><p>팀원이 사용할 Google 계정 이메일을 입력해 주세요.</p><label htmlFor="team-email">이메일 주소</label><div><input id="team-email" type="email" required value={newEmail} onChange={event => setNewEmail(event.target.value)} placeholder="name@example.com"/><button className="primary">추가</button></div></form><section className="team-list"><h2>워크스페이스 멤버 <span>{data.allowlist.length}</span></h2>{data.allowlist.map(row => <div key={row.email}><span className="avatar">{row.email.slice(0, 1).toUpperCase()}</span><div className="member-info"><strong>{row.email}</strong><small>{kst(row.added_at)} 추가</small></div><span className={`role-badge ${row.role}`}>{row.role === "admin" ? "관리자" : "팀원"}</span>{row.role === "member" && <button className="quiet-button" onClick={() => void manage("remove", row.email)}>제거</button>}</div>)}</section></div> : <>
+      {loading ? <div className="board-loading"><p role="status"><span className="loading-dot" />소재함을 불러오는 중…</p><div className="grid" aria-hidden="true">{[0, 1, 2, 3].map(id => <div key={id} className="skeleton-card"><div /><div /><div /></div>)}</div></div> : page === "team" ? <div className="team-layout"><form className="team-form" onSubmit={event => { event.preventDefault(); void manage("add", newEmail); }}><span className="section-icon"><Icon name="team" /></span><h2>함께할 팀원 초대</h2><p>팀원이 사용할 Google 계정 이메일을 입력해 주세요.</p><label htmlFor="team-email">이메일 주소</label><div><input id="team-email" type="email" required value={newEmail} onChange={event => setNewEmail(event.target.value)} placeholder="name@example.com"/><button className="primary">추가</button></div></form><section className="team-list"><h2>워크스페이스 멤버 <span>{data.allowlist.length}</span></h2>{data.allowlist.map(row => <div key={row.email}><span className="avatar">{row.email.slice(0, 1).toUpperCase()}</span><div className="member-info"><strong>{row.email}</strong><small>{kst(row.added_at)} 추가</small></div><span className={`role-badge ${row.role}`}>{row.role === "admin" ? "관리자" : "팀원"}</span>{row.role === "member" && <button className="quiet-button" onClick={() => void manage("remove", row.email)}>제거</button>}</div>)}</section></div> : <>
         {page !== "trashed" && <div className="filter-area"><div className="filters"><label className="search-field"><span className="sr-only">소재 검색</span><Icon name="search" /><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="어떤 소재를 찾고 있나요?" /></label>{page === "saved" ? <label className="sort-field"><span className="sr-only">정렬</span><select value={sort} onChange={event => setSort(event.target.value as "saved" | "rating")}><option value="saved">최근 저장순</option><option value="rating">별점 높은 순</option></select></label> : <span className="filter-hint">본문부터 팀원의 댓글까지 검색해 보세요</span>}</div><div className="category-row" role="group" aria-label="소재 분류">{categories.map(value => <button key={value} type="button" className={category === value ? "category-chip active" : "category-chip"} aria-pressed={category === value} onClick={() => setCategory(value)}>{value}{value === "전체" && <span>{data.materials.length}</span>}</button>)}</div></div>}
         {page === "trashed" && <div className="retention-note"><Icon name="trashed" /><span>휴지통으로 옮긴 소재는 {data.retentionDays}일 후 자동으로 삭제돼요. 그전에는 언제든 복구할 수 있어요.</span></div>}
         <div className="results-heading"><span>{query || category !== "전체" ? "검색 결과" : page === "inbox" ? "새롭게 발견한 소재" : page === "saved" ? "저장한 소재" : "휴지통의 소재"}<strong>{displayed.length}</strong></span><span>{page === "inbox" ? "최근 수집순" : page === "saved" ? sort === "rating" ? "별점 높은 순" : "최근 저장순" : "최근 삭제순"}</span></div>

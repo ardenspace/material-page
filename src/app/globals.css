@@ -92,7 +92,7 @@ textarea { resize: vertical; min-height: 86px; width: 100%; line-height: 1.6; }
 .batch-dot { height: 5px; width: 5px; border-radius: 50%; background: #91a484; }
 .batch-count { color: #9ba592; font-size: 12px; margin-left: 2px; }
 .grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; align-items: start; }
-.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 23px 24px 0; min-width: 0; box-shadow: 0 3px 8px #283d2803; overflow: hidden; transition: border-color .2s, box-shadow .2s; }
+.card { height: 700px; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 23px 24px 0; min-width: 0; box-shadow: 0 3px 8px #283d2803; overflow: hidden; transition: border-color .2s, box-shadow .2s; }
 .card:hover { border-color: #cbd7c6; box-shadow: 0 5px 20px #283d2807; }
 .card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 12px; }
 .tag { display: inline-flex; background: #edf2e8; color: #6c8352; font-size: 12px; font-weight: 600; padding: 5px 9px; border-radius: 5px; }
@@ -107,13 +107,23 @@ textarea { resize: vertical; min-height: 86px; width: 100%; line-height: 1.6; }
 .raw { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; font-size: 13px; line-height: 1.8; margin: 0 0 18px; }
 .byline { font-size: 13px; color: #6d7965; margin: 0 0 12px; overflow-wrap: anywhere; }
 .post-text { font-size: 15px; line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 17px; }
-.post-image { display: block; width: 100%; max-height: 420px; object-fit: contain; background: #f5f6f2; border-radius: 8px; margin: 0 0 16px; }
+.card-body { flex: 1; min-height: 0; overflow-y: auto; overflow-wrap: anywhere; scrollbar-width: thin; scrollbar-gutter: stable; padding-right: 4px; margin-bottom: 16px; }
+.card-body:focus-visible { outline: 2px solid #adbf87; outline-offset: 2px; }
+.material-media { height: 200px; flex: 0 0 200px; border-radius: 8px; overflow: hidden; background: #f1f4ed; }
+.post-image { display: block; width: 100%; height: 100%; object-fit: contain; }
+.media-placeholder { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #77866e; font-size: 12px; }
+.media-placeholder .icon { width: 28px; height: 28px; opacity: .6; }
+.board-loading > p { color: var(--muted); font-size: 13px; margin: 0 0 24px; }
+.skeleton-card { height: 700px; border: 1px solid var(--line); border-radius: 12px; padding: 24px; background: var(--card); }
+.skeleton-card > div { height: 16px; width: 72%; background: var(--light); border-radius: 6px; margin-bottom: 18px; }
+.skeleton-card > div:first-child { width: 25%; }
+.skeleton-card > div:last-child { width: 100%; height: 200px; margin-top: 140px; }
 .lookup-failed { font-size: 13px; line-height: 1.8; color: var(--muted); margin: 0 0 12px; }
-.card-actions { display: flex; gap: 8px; align-items: center; margin: 21px 0; }
+.card-actions { flex-shrink: 0; display: flex; gap: 8px; align-items: center; margin: 21px 0; }
 .card-actions button { font-size: 13px; padding: 8px 12px; min-height: 35px; }
 .card-actions .icon { width: 14px; height: 14px; }
 .card-actions .quiet-button { margin-left: auto; }
-.feedback { border-top: 1px solid #eef0e9; margin: 0 -24px; padding: 18px 24px 0; background: #fdfefb; }
+.feedback { flex: 0 0 175px; min-height: 0; overflow-y: auto; scrollbar-width: thin; border-top: 1px solid #eef0e9; margin: 0 -24px; padding: 18px 24px 0; background: #fdfefb; }
 .rating-head { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
 .rating-head strong, .comments-head strong { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; font-size: 13px; }
 .rating-head .icon, .comments-head .icon { width: 14px; height: 14px; color: #9ba58c; }
@@ -142,7 +152,7 @@ textarea { resize: vertical; min-height: 86px; width: 100%; line-height: 1.6; }
 .comment-form button, .comment-edit button { font-size: 13px; }
 .comment-edit { margin-top: 8px; }
 .comment-edit button { margin: 6px 6px 0 0; }
-.trash-info { font-size: 13px; color: #a48a67; line-height: 1.7; }
+.trash-info { flex-shrink: 0; margin: 8px 0 0; font-size: 13px; color: #a48a67; line-height: 1.7; }
 .retention-note { display: flex; align-items: center; gap: 12px; background: #f1f0e6; border: 1px solid #e7e4d3; border-radius: 8px; padding: 15px 18px; margin-bottom: 28px; font-size: 12px; line-height: 1.7; color: #8b7e5e; }
 .notice { display: flex; justify-content: space-between; align-items: center; gap: 15px; background: #fff6e7; border: 1px solid #ecdfc3; border-radius: 8px; padding: 10px 16px; margin-bottom: 24px; font-size: 12px; line-height: 1.7; color: #907444; }
 .empty { padding: 65px 20px 80px; text-align: center; border: 1px dashed #dce3d5; border-radius: 12px; background: #fbfcf9; }
